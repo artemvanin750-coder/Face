@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поиск себя на групповом фото</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #ffffff;
+            --text: #2d3748;
+            --muted: #718096;
+            --primary: #4a5568;
+            --accent: #000000;
+            --border: #e2e8f0;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: #fafafa;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: var(--primary);
+        }
+
+        .upload-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .upload-group {
+            text-align: center;
+            padding: 15px;
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+        }
+
+        .upload-group h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: var(--primary);
+        }
+
+        #file-input-1, #file-input-2 {
+            display: none;
+        }
+
+        .upload-label {
+            display: inline-block;
+            padding: 12px 20px;
+            background-color: var(--primary);
+            color: #fff;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .upload-label:hover { background-color: #414a5c; }
+
+        .status {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 14px;
+            color: var(--muted);
+            min-height: 20px;
+        }
+
+        .comparison-area {
+            margin-top: 30px;
+            text-align: center;
+            position: relative;
+            display: none;
+        }
+
+        .comparison-image {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            max-width: 600px;
+            background-color: #000;
+        }
+
+        #overlay-canvas {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 8px;
+            pointer-events: none;
+            max-width: 600px;
+        }
+
+        .result-label {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+            pointer-events: none;
+            user-select: none;
+            white-space: nowrap;
+            line-height: 1.3;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .disclaimer {
+            text-align: center;
+            font-size: 13px;
+            color: var(--muted);
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px dashed var(--border);
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Поиск себя на групповом фото</h1>
+
+        <div class="upload-grid">
+            <div class="upload-group">
+                <h3>1. Ваше фото (Эталон)</h3>
+                <input type="file" id="file-input-1" accept="image/*">
+                <label for="file-input-1" class="upload-label">Выбрать фото</label>
+            </div>
+            <div class="upload-group">
+                <h3>2. Групповое фото</h3>
+                <input type="file" id="file-input-2" accept="image/*">
+                <label for="file-input-2" class="upload-label">Выбрать фото</label>
+            </div>
+        </div>
+
+        <div id="status-text" class="status">Загрузка моделей...</div>
+
+        <div class="comparison-area" id="comparison-area">
+            <img id="group-image" class="comparison-image" src="">
+            <canvas id="overlay-canvas"></canvas>
+        </div>
+
+        <div class="disclaimer">
+            Ваши фото обрабатываются только в вашем браузере и никуда не отправляются. Изображение не сохраняется.
+        </div>
+    </div>
+
+    <!-- Библиотеки -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <script>
+        const MODEL_CDN = 'https://cdn.jsdelivr.net/npm/face-api@0.22.2/face-api.js/weights/';
+        
+        const STATUS_TEXT = document.getElementById('status-text');
+        const FILE_1 = document.getElementById('file-input-1');
+        const FILE_2 = document.getElementById('file-input-2');
+        const COMPARE_AREA = document.getElementById('comparison-area');
+        const GROUP_IMG = document.getElementById('group-image');
+        const OVERLAY_CANVAS = document.getElementById('overlay-canvas');
+
+        let myFaceDescriptor = null;
+
+        // --- 1. Загрузка моделей ---
+        async function loadModels() {
+            try {
+                await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_CDN);
+                await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_CDN);
+                await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_CDN);
+                
+                STATUS_TEXT.textContent = 'Модели загружены. Загрузите ваше фото и групповое фото.';
+            } catch (error) {
+                STATUS_TEXT.textContent = 'Ошибка загрузки моделей. Проверьте интернет.';
+                console.error(error);
+            }
+        }
+
+        // --- 2. Подготовка эталона (вашего лица) ---
+        async function processReferenceImage(file) {
+            const img = await faceapi.bufferToImage(await file.arrayBuffer());
+            const detection = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options())
+                .withFaceLandmarks(true)
+                .withFaceDescriptor();
+
+            if (detection) {
+                myFaceDescriptor = detection.descriptor;
+                STATUS_TEXT.textContent = 'Эталонное лицо сохранено. Теперь выберите групповое фото.';
+            } else {
+                STATUS_TEXT.textContent = 'На эталонном фото не удалось найти лицо. Попробуйте другое.';
+                myFaceDescriptor = null;
+            }
+        }
+
+        // --- 3. Поиск на групповом фото ---
+        async function processGroupImage(file) {
+            if (!myFaceDescriptor) {
+                STATUS_TEXT.textContent = 'Сначала загрузите ваше эталонное фото.';
+                return;
+            }
+
+            STATUS_TEXT.textContent = 'Идет сравнение лиц...';
+            COMPARE_AREA.style.display = 'none';
+
+            const imgUrl = URL.createObjectURL(file);
+            GROUP_IMG.src = imgUrl;
+            await new Promise(resolve => { GROUP_IMG.onload = resolve; });
+
+            const displaySize = { width: GROUP_IMG.width, height: GROUP_IMG.height };
+            const inputCanvas = document.createElement('canvas');
+            inputCanvas.width = displaySize.width;
+            inputCanvas.height = displaySize.height;
+            const inputCtx = inputCanvas.getContext('2d');
+            inputCtx.drawImage(GROUP_IMG, 0, 0);
+
+            // Ищем ВСЕ лица на групповом фото
+            const detections = await faceapi.detectAllFaces(inputCanvas, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+                .withFaceLandmarks(true)
+                .withFaceDescriptors();
+
+            if (detections.length === 0) {
+                STATUS_TEXT.textContent = 'На групповом фото лица не найдены.';
+                return;
+            }
+
+            // Сравниваем наше эталонное лицо со всеми найденными
+            const results = faceapi.compareFaces(detections.map(d => d.descriptor), myFaceDescriptor);
+            
+            // Находим лицо с наибольшей уверенностью (но выше порога)
+            let bestMatchIndex = -1;
+            let bestMatchScore = 0;
+            
+            results.forEach((isMatch, index) => {
+                const distance = faceapi.euclideanDistance(detections[index].descriptor, myFaceDescriptor);
+                // Face-api.js считает match при distance < 0.6. Чем меньше distance, тем больше уверенность.
+                // Для надежности ищем минимальный distance
+                if (isMatch && distance < 0.5 && distance < bestMatchScore) {
+                    bestMatchScore = distance;
+                    bestMatchIndex = index;
+                }
+            });
+
+            // --- Отрисовка ---
+            faceapi.matchDimensions(OVERLAY_CANVAS, displaySize);
+            const ctx = OVERLAY_CANVAS.getContext('2d');
+            ctx.clearRect(0, 0, displaySize.width, displaySize.height);
+
+            if (bestMatchIndex !== -1) {
+                const box = detections[bestMatchIndex].detection.box;
+                
+                // Рамка
+                ctx.strokeStyle = '#ff0000'; // Красная рамка для найденного лица
+                ctx.lineWidth = 3;
+                ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+                // Текст
+                const confidence = Math.round((1 - bestMatchScore) * 100);
+                const label = `Найдено: ${confidence}%`;
+                
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                const textWidth = ctx.measureText(label).width + 12;
+                ctx.fillRect(box.x, box.y - 26, textWidth, 24);
+
+                ctx.fillStyle = '#000';
+                ctx.font = '13px Inter, sans-serif';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, box.x + 6, box.y - 14);
+
+                STATUS_TEXT.textContent = `Лицо найдено с уверенностью ${confidence}%`;
+            } else {
+                STATUS_TEXT.textContent = 'Лицо не найдено на групповом фото.';
+            }
+
+            COMPARE_AREA.style.display = 'block';
+        }
+
+        // --- 4. Слушатели событий ---
+        FILE_1.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                STATUS_TEXT.textContent = 'Обрабатываю ваше фото...';
+                processReferenceImage(e.target.files[0]);
+            }
+        });
+
+        FILE_2.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                processGroupImage(e.target.files[0]);
+            }
+        });
+
+        // --- Запуск ---
+        (async () => {
+            await loadModels();
+        })();
+    </script>
+</body>
+</html>
